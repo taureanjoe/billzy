@@ -410,7 +410,7 @@ body {
 
 .bill-item-card {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 0.75rem;
   padding: 0.875rem 1rem;
   background: white;
@@ -432,6 +432,18 @@ body {
   min-width: 0;
   font-weight: 500;
   color: var(--gray-800);
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.bill-item-qty {
+  flex-shrink: 0;
+  font-size: 0.8125rem;
+  font-weight: 600;
+  color: var(--primary);
+  margin-right: 0.25rem;
 }
 
 .bill-item-name .cell-editable {
@@ -450,6 +462,7 @@ body {
   font-variant-numeric: tabular-nums;
   font-weight: 500;
   color: var(--gray-800);
+  align-self: center;
 }
 
 .bill-item-price .cell-editable {
@@ -471,6 +484,7 @@ body {
   align-items: center;
   max-width: 140px;
   justify-content: flex-end;
+  align-self: center;
 }
 
 .bill-item-assign label {

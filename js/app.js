@@ -12,7 +12,7 @@
   const state = {
     receiptFiles: [],       // { id, file, dataUrl?, parsed?, merchantName }
     people: [],             // [{ id, name }]
-    items: [],              // [{ id, name, price, uncertain, receiptId, assigneeIds: [] }]
+    items: [],              // [{ id, name, price, quantity, uncertain, receiptId, assigneeIds: [] }]
     warnings: [],           // string[]
     nextReceiptId: 1,
     nextPersonId: 1,
@@ -41,6 +41,7 @@
   const downloadCsvBtn = document.getElementById('download-csv-btn');
   const editModal = document.getElementById('edit-modal');
   const editModalBackdrop = document.getElementById('edit-modal-backdrop');
+  const editQuantity = document.getElementById('edit-quantity');
   const editName = document.getElementById('edit-name');
   const editPrice = document.getElementById('edit-price');
   const editCancel = document.getElementById('edit-cancel');
@@ -56,8 +57,79 @@
   }
 
   /**
+   * True if line looks like receipt metadata we should skip (not an item).
+   */
+  function isMetadataLine(line) {
+    const lower = line.toLowerCase().trim();
+    if (lower.length < 3) return true;
+    // Dates and time
+    if (/\d{1,2}\/\d{1,2}\/\d{2,4}\s*\d{0,2}:?\d{0,2}\s*(am|pm)?/i.test(lower)) return true;
+    if (/^\d{1,2}:\d{2}\s*[ap]m$/i.test(lower)) return true;
+    // Receipt header fields
+    if (/^(server|check\s*#|table|tab|guest)\s*[:#]?\s*/i.test(lower)) return true;
+    if (/^#?\d{2,5}$/.test(lower)) return true; // check number alone
+    // Addresses
+    if (/\b(street|st\.?|avenue|ave\.?|blvd|road|rd\.?|drive|dr\.?)\b/i.test(lower) && /\d/.test(lower)) return true;
+    if (/\b\d{5}(-\d{4})?\s*$/.test(lower)) return true; // zip at end
+    // Payment
+    if (/\b(visa|mastercard|amex|chip|read|approved|declined|sale|authorization)\b/i.test(lower)) return true;
+    if (/^x+\d{4}$/i.test(lower)) return true; // masked card
+    if (/^\d{6}$/.test(lower)) return true; // approval code
+    // Promo / footer
+    if (lower.length > 120 && !/\$\d+\.\d{2}\s*$/.test(lower)) return true;
+    return false;
+  }
+
+  /**
+   * Extract price from end of string: last $X.XX or X.XX (2 decimals). Returns { price, rest } or null.
+   * Uses last occurrence so "item name 12.00" or "item $12.00" both work.
+   */
+  function extractPriceFromEnd(str) {
+    const withDollar = str.match(/\s+(\$\s*)(\d+[.,]\d{2})\s*$/);
+    if (withDollar) {
+      const price = parseFloat(withDollar[2].replace(',', '.'));
+      const rest = str.slice(0, str.length - withDollar[0].length).trim();
+      return rest.length > 0 ? { price, rest } : null;
+    }
+    const twoDecimals = str.match(/\s+(\d+[.,]\d{2})\s*$/);
+    if (twoDecimals) {
+      const price = parseFloat(twoDecimals[1].replace(',', '.'));
+      const rest = str.slice(0, str.length - twoDecimals[0].length).trim();
+      return rest.length > 0 ? { price, rest } : null;
+    }
+    return null;
+  }
+
+  /**
+   * Strip leading quantity (e.g. "2 " or "3x ") from rest; return { quantity, name }.
+   */
+  function stripLeadingQuantity(rest) {
+    const leadingNum = rest.match(/^(\d+)\s*[x×]?\s*(.*)$/);
+    if (leadingNum) {
+      const qty = parseInt(leadingNum[1], 10);
+      const name = leadingNum[2].trim();
+      if (qty >= 1 && qty <= 99 && name.length > 0) return { quantity: qty, name };
+    }
+    return { quantity: 1, name: rest };
+  }
+
+  /**
+   * True if the extracted "name" looks like a real item (not OCR garbage).
+   */
+  function looksLikeItemName(name) {
+    if (!name || name.length < 2) return false;
+    const letters = (name.match(/[a-zA-Z]/g) || []).length;
+    if (letters < 2) return false;
+    if (/^[\d\s$.,#:;]+$/.test(name)) return false;
+    const nonLetter = name.replace(/[a-zA-Z\s]/g, '').length;
+    if (nonLetter > name.length * 0.5) return false;
+    if (name.length > 120) return false;
+    return true;
+  }
+
+  /**
    * Parse raw OCR text into line items + meta.
-   * Heuristic: lines with a number at end = item + price; "total"/"tax" etc. = meta.
+   * Handles: optional leading quantity (2 Mocktail...), price at end, skips metadata.
    */
   function parseReceiptText(text) {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -66,11 +138,8 @@
     let tax = null;
     const localWarnings = [];
 
-    // Price at end: optional currency, digits and optional decimal
-    const priceAtEnd = /(.+?)\s+([£$€]?\s*\d+[.,]?\d*)\s*$/;
-
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+      let line = lines[i];
       const lower = line.toLowerCase();
 
       if (/\b(total|total due|amount|balance)\b/.test(lower)) {
@@ -84,27 +153,18 @@
         continue;
       }
       if (/\b(subtotal|sub total)\b/.test(lower)) continue;
+      if (isMetadataLine(line)) continue;
 
-      const match = line.match(priceAtEnd);
-      if (match) {
-        const name = match[1].trim().replace(/\s+/g, ' ');
-        const priceStr = match[2].replace(',', '.');
-        const price = parseFloat(priceStr.replace(/[^\d.]/g, '')) || null;
-        if (name.length > 0 && price != null && price < 10000) {
-          items.push({ name, price, uncertain: false });
-        }
-      } else if (line.length > 2 && /\d/.test(line)) {
-        // Line has digits but no clear price at end — try to extract
-        const num = line.match(/(\d+[.,]\d{2})/);
-        if (num) {
-          const price = parseFloat(num[1].replace(',', '.'));
-          const name = line.replace(num[0], '').trim() || 'Item';
-          if (price < 10000) {
-            items.push({ name: name || 'Item', price, uncertain: true });
-            localWarnings.push(`"${name}" — price may be wrong (uncertain read).`);
-          }
-        }
-      }
+      const extracted = extractPriceFromEnd(line);
+      if (!extracted || extracted.price <= 0 || extracted.price >= 10000) continue;
+
+      const { price, rest } = extracted;
+      const { quantity, name: rawName } = stripLeadingQuantity(rest);
+      const name = rawName.replace(/\s+/g, ' ').trim();
+
+      if (!looksLikeItemName(name)) continue;
+
+      items.push({ name, price, quantity, uncertain: false });
     }
 
     if (items.length === 0) {
@@ -113,9 +173,6 @@
     const sumItems = items.reduce((s, i) => s + i.price, 0);
     if (total != null && Math.abs(sumItems - total) > 0.02) {
       localWarnings.push('Total may be inaccurate — item sum does not match receipt total.');
-    }
-    if (items.some(i => i.uncertain)) {
-      localWarnings.push('Some items are marked uncertain. Please verify prices.');
     }
 
     return { items, total, tax, warnings: localWarnings };
@@ -212,12 +269,13 @@
         const { items, warnings: w } = await runOCR(rec.dataUrl);
         rec.parsed = true;
         state.warnings.push(...w);
-        items.forEach(({ name, price, uncertain }) => {
+        items.forEach(({ name, price, quantity, uncertain }) => {
           state.items.push({
             id: 'i' + state.nextItemId++,
             name,
             price,
-            uncertain,
+            quantity: quantity != null ? quantity : 1,
+            uncertain: !!uncertain,
             receiptId: rec.id,
             assigneeIds: [],
           });
@@ -347,11 +405,13 @@
       const editBtn = section.querySelector('.btn-edit-merchant');
       if (editBtn) editBtn.addEventListener('click', () => openMerchantModal(editBtn.dataset.receiptId));
 
-      items.forEach(item => {
+        items.forEach(item => {
+        const qty = item.quantity != null ? item.quantity : 1;
+        const qtyLabel = qty > 1 ? `<span class="bill-item-qty" title="Quantity">${qty}×</span> ` : '';
         const card = document.createElement('div');
         card.className = 'bill-item-card' + (item.uncertain ? ' uncertain' : '');
         card.innerHTML = `
-          <div class="bill-item-name"><span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</div>
+          <div class="bill-item-name">${qtyLabel}<span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</div>
           <div class="bill-item-price"><span class="cell-editable" data-item-id="${item.id}" data-field="price">$${item.price.toFixed(2)}</span></div>
           <div class="bill-item-assign"></div>
           <button type="button" class="bill-item-remove" data-item-id="${item.id}" aria-label="Remove item">×</button>
@@ -423,10 +483,12 @@
     const item = state.items.find(i => i.id === itemId);
     if (!item) return;
     state.editingItemId = itemId;
+    if (editQuantity) editQuantity.value = String(item.quantity != null ? item.quantity : 1);
     editName.value = item.name;
     editPrice.value = item.price.toFixed(2);
     show(editModal);
-    setTimeout(() => (field === 'name' ? editName : editPrice).focus(), 50);
+    const focusEl = field === 'name' ? editName : field === 'price' ? editPrice : editQuantity;
+    setTimeout(() => focusEl.focus(), 50);
   }
 
   function closeEditModal() {
@@ -437,9 +499,13 @@
   function saveEdit() {
     const item = state.items.find(i => i.id === state.editingItemId);
     if (!item) { closeEditModal(); return; }
+    if (editQuantity) {
+      const qty = parseInt(editQuantity.value, 10);
+      if (!Number.isNaN(qty) && qty >= 1 && qty <= 99) item.quantity = qty;
+    }
     const name = editName.value.trim();
-    const price = parseFloat(editPrice.value);
     if (name) item.name = name;
+    const price = parseFloat(editPrice.value);
     if (!Number.isNaN(price) && price >= 0) {
       item.price = price;
       item.uncertain = false;
@@ -454,6 +520,7 @@
       id: 'i' + state.nextItemId++,
       name: 'New item',
       price: 0,
+      quantity: 1,
       uncertain: false,
       receiptId: null,
       assigneeIds: [],
@@ -489,7 +556,9 @@
       const merchant = item.receiptId ? getMerchantName(item.receiptId) : 'Other';
       item.assigneeIds.forEach(pid => {
         if (!breakdown[pid]) breakdown[pid] = [];
-        breakdown[pid].push({ merchant, itemName: item.name, amount: share });
+        const qty = item.quantity != null ? item.quantity : 1;
+        const itemName = qty > 1 ? qty + '× ' + item.name : item.name;
+        breakdown[pid].push({ merchant, itemName, amount: share });
       });
     });
     return breakdown;
@@ -574,9 +643,11 @@
         if (!item.assigneeIds.includes(p.id)) return;
         const share = item.price / item.assigneeIds.length;
         const merchant = item.receiptId ? getMerchantName(item.receiptId) : '';
+        const qty = item.quantity != null ? item.quantity : 1;
+        const namePart = qty > 1 ? qty + '× ' + item.name : item.name;
         const label = item.assigneeIds.length > 1
-          ? `${item.name} (${item.assigneeIds.length}-way split)`
-          : item.name;
+          ? `${namePart} (${item.assigneeIds.length}-way split)`
+          : namePart;
         lines.push({ label, amount: share, merchant });
       });
       const subtotal = lines.reduce((s, l) => s + l.amount, 0);

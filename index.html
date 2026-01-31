@@ -98,14 +98,16 @@
     </div>
   </div>
 
-  <!-- Edit modal (inline for item/price) -->
+  <!-- Edit modal (inline for item/price/quantity) -->
   <div class="modal hidden" id="edit-modal" role="dialog" aria-labelledby="edit-modal-title" aria-modal="true">
     <div class="modal-backdrop" id="edit-modal-backdrop"></div>
     <div class="modal-content">
       <h3 id="edit-modal-title">Edit item</h3>
+      <label class="modal-label">Quantity</label>
+      <input type="number" class="modal-input" id="edit-quantity" min="1" max="99" inputmode="numeric" />
       <label class="modal-label">Name</label>
       <input type="text" class="modal-input" id="edit-name" />
-      <label class="modal-label">Price ($)</label>
+      <label class="modal-label">Price ($) — total for this line</label>
       <input type="text" class="modal-input" id="edit-price" inputmode="decimal" />
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="edit-cancel">Cancel</button>
