@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0d9488" />
+  <title>billzy — Split receipts instantly</title>
+  <link rel="stylesheet" href="css/main.css" />
+</head>
+<body>
+  <header class="header">
+    <h1 class="logo">billzy</h1>
+    <p class="tagline">Scan → Parse → Split. No account, no saving.</p>
+  </header>
+
+  <main class="main">
+    <!-- Upload -->
+    <section class="panel upload-panel" id="upload-panel">
+      <h2 class="panel-title">Upload receipts</h2>
+      <div class="dropzone" id="dropzone" role="button" tabindex="0" aria-label="Drop receipt images or click to browse">
+        <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple hidden />
+        <span class="dropzone-icon" aria-hidden="true">📷</span>
+        <span class="dropzone-text">Drop images here or tap to browse</span>
+        <span class="dropzone-hint">JPG, PNG · Multiple receipts OK</span>
+      </div>
+      <div class="receipt-thumbnails" id="receipt-thumbnails"></div>
+      <div class="actions" id="parse-actions">
+        <button type="button" class="btn btn-primary" id="parse-all-btn" disabled>Parse all receipts</button>
+      </div>
+    </section>
+
+    <!-- People (collapsible on mobile) -->
+    <section class="panel people-panel" id="people-panel">
+      <button type="button" class="panel-toggle" id="people-toggle" aria-expanded="false" aria-controls="people-list">
+        <h2 class="panel-title">Split with</h2>
+        <span class="toggle-icon" aria-hidden="true"></span>
+      </button>
+      <div class="people-list" id="people-list" hidden>
+        <div class="people-slots" id="people-slots"></div>
+        <button type="button" class="btn btn-ghost add-person-btn" id="add-person-btn">
+          + Add person
+        </button>
+        <p class="people-hint">Up to 20 people. Names are for this session only.</p>
+      </div>
+    </section>
+
+    <!-- Parsing feedback / warnings -->
+    <section class="panel warnings-panel hidden" id="warnings-panel">
+      <h2 class="panel-title warnings-title">
+        <span class="icon-warning" aria-hidden="true">⚠️</span>
+        Parsing notes
+      </h2>
+      <ul class="warnings-list" id="warnings-list"></ul>
+    </section>
+
+    <!-- Parsed items table -->
+    <section class="panel table-panel hidden" id="table-panel">
+      <h2 class="panel-title">Parsed items</h2>
+      <p class="table-hint">Tap a cell to edit. Assign each item to who pays.</p>
+      <div class="table-wrap">
+        <table class="parsed-table" id="parsed-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th class="col-price">Price</th>
+              <th class="col-assign">Assign to</th>
+              <th class="col-remove" aria-label="Remove"></th>
+            </tr>
+          </thead>
+          <tbody id="parsed-tbody"></tbody>
+        </table>
+      </div>
+      <div class="table-meta" id="table-meta"></div>
+      <button type="button" class="btn btn-ghost add-item-btn" id="add-item-btn">+ Add item</button>
+    </section>
+
+    <!-- Summary / split result -->
+    <section class="panel summary-panel hidden" id="summary-panel">
+      <h2 class="panel-title">Split summary</h2>
+      <div class="summary-table-wrap">
+        <table class="summary-table" id="summary-table">
+          <thead>
+            <tr>
+              <th>Person</th>
+              <th class="col-amount">Amount owed</th>
+            </tr>
+          </thead>
+          <tbody id="summary-tbody"></tbody>
+        </table>
+      </div>
+      <div class="summary-actions">
+        <button type="button" class="btn btn-primary" id="copy-btn">Copy result</button>
+        <button type="button" class="btn btn-secondary" id="download-csv-btn">Download CSV</button>
+        <button type="button" class="btn btn-secondary" id="download-image-btn">Download image</button>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <p class="footer-notice">No account. No data stored. Everything stays on your device.</p>
+    <button type="button" class="footer-legal-toggle" id="legal-toggle" aria-expanded="false" aria-controls="legal-notice">Privacy & legal</button>
+    <div class="footer-legal hidden" id="legal-notice" aria-hidden="true">
+      <p>billzy does not collect, store, or transmit your receipts or personal data. All processing happens in your browser. This tool is for convenience only and does not constitute legal, tax, or financial advice. Use at your own discretion.</p>
+    </div>
+  </footer>
+
+  <!-- Edit modal (inline for item/price) -->
+  <div class="modal hidden" id="edit-modal" role="dialog" aria-labelledby="edit-modal-title" aria-modal="true">
+    <div class="modal-backdrop" id="edit-modal-backdrop"></div>
+    <div class="modal-content">
+      <h3 id="edit-modal-title">Edit item</h3>
+      <label class="modal-label">Name</label>
+      <input type="text" class="modal-input" id="edit-name" />
+      <label class="modal-label">Price ($)</label>
+      <input type="text" class="modal-input" id="edit-price" inputmode="decimal" />
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="edit-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="edit-save">Save</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
