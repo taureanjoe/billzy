@@ -39,9 +39,23 @@ body {
 }
 
 .header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
   padding: 1rem 1.25rem 0.75rem;
   background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   color: white;
+}
+
+.header-left {
+  flex: 1;
+  min-width: 0;
+}
+
+.header-right {
+  flex-shrink: 0;
+  position: relative;
 }
 
 .logo {
@@ -55,6 +69,100 @@ body {
   margin: 0.25rem 0 0;
   font-size: 0.8125rem;
   opacity: 0.9;
+}
+
+.btn-currency {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.4rem 0.6rem;
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  border-radius: var(--radius-sm);
+  background: rgba(255, 255, 255, 0.15);
+  color: white;
+  font-size: 0.8125rem;
+  font-weight: 500;
+  cursor: pointer;
+}
+
+.btn-currency:hover,
+.btn-currency:focus-visible {
+  background: rgba(255, 255, 255, 0.25);
+  outline: none;
+}
+
+.currency-symbol {
+  font-weight: 600;
+}
+
+.currency-code {
+  opacity: 0.9;
+}
+
+.currency-chevron {
+  font-size: 0.6rem;
+  opacity: 0.8;
+}
+
+.currency-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 0.35rem;
+  min-width: 180px;
+  padding: 0.5rem 0;
+  background: white;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  border: 1px solid var(--gray-200);
+  z-index: 50;
+}
+
+.currency-menu-list {
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.currency-menu-option {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  border: none;
+  background: none;
+  font-size: 0.875rem;
+  text-align: left;
+  cursor: pointer;
+  color: var(--gray-800);
+}
+
+.currency-menu-option:hover,
+.currency-menu-option:focus-visible {
+  background: var(--gray-100);
+  outline: none;
+}
+
+.currency-menu-option.is-selected {
+  background: var(--accent-light);
+  color: var(--primary-dark);
+  font-weight: 500;
+}
+
+.currency-menu-custom {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 1rem;
+  margin-top: 0.25rem;
+  border: none;
+  border-top: 1px solid var(--gray-200);
+  background: none;
+  font-size: 0.8125rem;
+  color: var(--primary);
+  cursor: pointer;
+  text-align: left;
+}
+
+.currency-menu-custom:hover {
+  background: var(--gray-50);
 }
 
 .main {

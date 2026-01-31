@@ -9,8 +9,21 @@
 </head>
 <body>
   <header class="header">
-    <h1 class="logo">billzy</h1>
-    <p class="tagline">Scan → Parse → Split. Instant, private, done.</p>
+    <div class="header-left">
+      <h1 class="logo">billzy</h1>
+      <p class="tagline">Scan → Parse → Split. Instant, private, done.</p>
+    </div>
+    <div class="header-right">
+      <button type="button" class="btn-currency" id="currency-btn" aria-haspopup="true" aria-expanded="false" aria-controls="currency-menu">
+        <span class="currency-symbol" id="currency-display">$</span>
+        <span class="currency-code" id="currency-code-display">USD</span>
+        <span class="currency-chevron" aria-hidden="true">▼</span>
+      </button>
+      <div class="currency-menu hidden" id="currency-menu" role="menu">
+        <div class="currency-menu-list" id="currency-menu-list"></div>
+        <button type="button" class="currency-menu-custom" id="currency-custom-btn">+ Add custom currency</button>
+      </div>
+    </div>
   </header>
 
   <main class="main">
@@ -85,6 +98,24 @@
       <p>billzy does not collect, store, or transmit your receipts or personal data. All processing happens in your browser. This tool is for convenience only and does not constitute legal, tax, or financial advice. Use at your own discretion.</p>
     </div>
   </footer>
+
+  <!-- Custom currency modal -->
+  <div class="modal hidden" id="custom-currency-modal" role="dialog" aria-labelledby="custom-currency-title" aria-modal="true">
+    <div class="modal-backdrop" id="custom-currency-backdrop"></div>
+    <div class="modal-content">
+      <h3 id="custom-currency-title">Add custom currency</h3>
+      <label class="modal-label">Symbol (e.g. $, €, ¥)</label>
+      <input type="text" class="modal-input" id="custom-currency-symbol" placeholder="$" maxlength="6" />
+      <label class="modal-label">Code (e.g. USD, EUR)</label>
+      <input type="text" class="modal-input" id="custom-currency-code" placeholder="USD" maxlength="6" />
+      <label class="modal-label">Name (optional)</label>
+      <input type="text" class="modal-input" id="custom-currency-name" placeholder="US Dollar" />
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="custom-currency-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="custom-currency-save">Add & use</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Edit merchant modal -->
   <div class="modal hidden" id="merchant-modal" role="dialog" aria-labelledby="merchant-modal-title" aria-modal="true">

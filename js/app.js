@@ -10,12 +10,26 @@
   const MAX_RECEIPTS = 10;
   const GITHUB_REPO = 'taureanjoe/billzy';
 
+  const DEFAULT_CURRENCY = { symbol: '$', code: 'USD', name: 'US Dollar' };
+  const CURRENCIES = [
+    { symbol: '$', code: 'USD', name: 'US Dollar' },
+    { symbol: '€', code: 'EUR', name: 'Euro' },
+    { symbol: '£', code: 'GBP', name: 'British Pound' },
+    { symbol: '¥', code: 'JPY', name: 'Japanese Yen' },
+    { symbol: 'C$', code: 'CAD', name: 'Canadian Dollar' },
+    { symbol: 'A$', code: 'AUD', name: 'Australian Dollar' },
+    { symbol: '₹', code: 'INR', name: 'Indian Rupee' },
+    { symbol: 'CHF', code: 'CHF', name: 'Swiss Franc' },
+  ];
+
   // --- State ---
   const state = {
-    receiptFiles: [],       // { id, file, dataUrl?, parsed?, merchantName }
-    people: [],             // [{ id, name }]
-    items: [],              // [{ id, name, price, quantity, uncertain, receiptId, assigneeIds: [] }]
-    warnings: [],           // string[]
+    receiptFiles: [],
+    people: [],
+    items: [],
+    warnings: [],
+    currency: { ...DEFAULT_CURRENCY },
+    customCurrencies: [],   // [{ symbol, code, name }]
     nextReceiptId: 1,
     nextPersonId: 1,
     nextItemId: 1,
@@ -53,6 +67,8 @@
   function $(id) { return document.getElementById(id); }
   function show(el) { el.classList.remove('hidden'); el.hidden = false; }
   function hide(el) { el.classList.add('hidden'); el.hidden = true; }
+  function currencySymbol() { return state.currency.symbol || '$'; }
+  function formatPrice(amount) { return (state.currency.symbol || '$') + (amount == null ? '0.00' : Number(amount).toFixed(2)); }
   function parseMoney(s) {
     const m = String(s).replace(/[^\d.]/g, '').match(/(\d+\.?\d*)/);
     return m ? parseFloat(m[1]) : null;
@@ -60,6 +76,7 @@
 
   /**
    * True if line looks like receipt metadata we should skip (not an item).
+   * Avoid skipping item names that contain "street" (e.g. "Love Street 5.75").
    */
   function isMetadataLine(line) {
     const lower = line.toLowerCase().trim();
@@ -70,9 +87,9 @@
     // Receipt header fields
     if (/^(server|check\s*#|table|tab|guest)\s*[:#]?\s*/i.test(lower)) return true;
     if (/^#?\d{2,5}$/.test(lower)) return true; // check number alone
-    // Addresses
-    if (/\b(street|st\.?|avenue|ave\.?|blvd|road|rd\.?|drive|dr\.?)\b/i.test(lower) && /\d/.test(lower)) return true;
+    // Addresses: only skip if line ends with zip, or starts with street number (e.g. "520 Second Street")
     if (/\b\d{5}(-\d{4})?\s*$/.test(lower)) return true; // zip at end
+    if (/^\d+\s+\w+.*\b(street|st\.?|avenue|ave\.?|blvd|road|rd\.?|drive|dr\.?)\b/i.test(lower)) return true;
     // Payment
     if (/\b(visa|mastercard|amex|chip|read|approved|declined|sale|authorization)\b/i.test(lower)) return true;
     if (/^x+\d{4}$/i.test(lower)) return true; // masked card
@@ -148,8 +165,20 @@
   }
 
   /**
+   * True if line is only a price (e.g. "18.00" or "$18.00") — used to merge with previous line.
+   */
+  function isPriceOnlyLine(line) {
+    const trimmed = line.trim();
+    const m = trimmed.match(/^\$?\s*(\d{1,4}[.,]\d{2})\s*$/);
+    if (!m) return null;
+    const price = parseFloat(m[1].replace(',', '.'));
+    return price >= 0.01 && price < 10000 ? price : null;
+  }
+
+  /**
    * Parse raw OCR text into line items + meta.
-   * Handles: optional leading quantity (2 Mocktail...), price at end, skips metadata.
+   * Handles: optional leading quantity, price at end, skips metadata.
+   * Merges split lines: when a line is only a price (e.g. "18.00"), use previous line as item name.
    */
   function parseReceiptText(text) {
     const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
@@ -157,6 +186,7 @@
     let total = null;
     let tax = null;
     const localWarnings = [];
+    let previousUnused = null;
 
     for (let i = 0; i < lines.length; i++) {
       let line = lines[i];
@@ -165,20 +195,44 @@
       if (/\b(total|total due|amount|balance)\b/.test(lower)) {
         const p = parseMoney(line);
         if (p != null) total = p;
+        previousUnused = null;
         continue;
       }
       if (/\b(tax|vat|gst)\b/.test(lower)) {
         const p = parseMoney(line);
         if (p != null) tax = p;
+        previousUnused = null;
         continue;
       }
-      if (/\b(subtotal|sub total)\b/.test(lower)) continue;
-      if (isMetadataLine(line)) continue;
+      if (/\b(subtotal|sub total)\b/.test(lower)) {
+        previousUnused = null;
+        continue;
+      }
+      if (isMetadataLine(line)) {
+        previousUnused = null;
+        continue;
+      }
+
+      const priceOnly = isPriceOnlyLine(line);
+      if (priceOnly != null && previousUnused != null && looksLikeItemName(previousUnused)) {
+        items.push({ name: previousUnused.replace(/\s+/g, ' ').trim(), price: priceOnly, quantity: 1, uncertain: true });
+        previousUnused = null;
+        continue;
+      }
+      if (priceOnly != null) {
+        previousUnused = null;
+        continue;
+      }
 
       let extracted = extractPriceFromEnd(line);
       if (!extracted) extracted = extractPriceAnywhere(line);
-      if (!extracted || extracted.price <= 0 || extracted.price >= 10000) continue;
+      if (!extracted || extracted.price <= 0 || extracted.price >= 10000) {
+        if (looksLikeItemName(line)) previousUnused = line;
+        else previousUnused = null;
+        continue;
+      }
 
+      previousUnused = null;
       const { price, rest } = extracted;
       const { quantity, name: rawName } = stripLeadingQuantity(rest);
       const name = rawName.replace(/\s+/g, ' ').trim();
@@ -468,7 +522,7 @@
         card.innerHTML = `
           <div class="bill-item-qty-cell" title="Quantity — tap to edit"><span class="cell-editable cell-editable-qty" data-item-id="${item.id}" data-field="quantity">${qty}</span></div>
           <div class="bill-item-name"><span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</div>
-          <div class="bill-item-price"><span class="cell-editable" data-item-id="${item.id}" data-field="price">$${item.price.toFixed(2)}</span></div>
+          <div class="bill-item-price"><span class="cell-editable" data-item-id="${item.id}" data-field="price">${formatPrice(item.price)}</span></div>
           <div class="bill-item-assign"></div>
           <button type="button" class="bill-item-remove" data-item-id="${item.id}" aria-label="Remove item">×</button>
         `;
@@ -505,7 +559,7 @@
 
     const total = state.items.reduce((s, i) => s + i.price, 0);
     const assigned = state.items.filter(i => i.assigneeIds.length > 0).reduce((s, i) => s + i.price, 0);
-    tableMeta.textContent = `Total: $${total.toFixed(2)}${state.people.length ? ` · Assigned: $${assigned.toFixed(2)}` : ''}`;
+    tableMeta.textContent = `Total: ${formatPrice(total)}${state.people.length ? ` · Assigned: ${formatPrice(assigned)}` : ''}`;
 
     if (state.items.length > 0) show(tablePanel); else hide(tablePanel);
   }
@@ -638,13 +692,13 @@
       Object.keys(byMerchant).forEach(merchant => {
         breakdownHtml += '<div class="breakdown-merchant">' + escapeHtml(merchant) + '</div>';
         byMerchant[merchant].forEach(({ itemName, amount: amt }) => {
-          breakdownHtml += '<div class="breakdown-line">' + escapeHtml(itemName) + ' · $' + amt.toFixed(2) + '</div>';
+          breakdownHtml += '<div class="breakdown-line">' + escapeHtml(itemName) + ' · ' + formatPrice(amt) + '</div>';
         });
       });
       card.innerHTML = `
         <div class="summary-person-header">
           <span class="summary-person-name">${escapeHtml(p.name || `Person ${idx + 1}`)}</span>
-          <span class="summary-person-amount">$${amount.toFixed(2)}</span>
+          <span class="summary-person-amount">${formatPrice(amount)}</span>
         </div>
         ${breakdownHtml ? '<div class="summary-person-breakdown">' + breakdownHtml + '</div>' : ''}
       `;
@@ -658,7 +712,7 @@
     const lines = state.people.map((p, idx) => {
       const name = p.name || `Person ${idx + 1}`;
       const amount = (owed[p.id] || 0).toFixed(2);
-      return `${name}: $${amount}`;
+      return `${name}: ${formatPrice(amount)}`;
     });
     return lines.join('\n');
   }
@@ -787,7 +841,7 @@
         ctx.font = fontSub;
         ctx.fillStyle = '#1c1c1e';
         byMerchant[merchant].forEach(({ label, amount }) => {
-          const amtStr = `$${amount.toFixed(2)}`;
+          const amtStr = formatPrice(amount);
           const maxLabelW = width - padding * 2 - 85 * dpr;
           const truncated = ctx.measureText(label).width > maxLabelW
             ? label.slice(0, Math.floor(label.length * maxLabelW / ctx.measureText(label).width)) + '…'
@@ -805,7 +859,7 @@
       ctx.fillText('Subtotal', padding, y);
       ctx.font = fontTitle;
       ctx.fillStyle = purple;
-      const subStr = `$${subtotal.toFixed(2)}`;
+      const subStr = formatPrice(subtotal);
       ctx.fillText(subStr, width - padding - ctx.measureText(subStr).width, y);
       y += lineHeight + sectionGap;
     });
@@ -873,7 +927,7 @@
         const qty = item.quantity != null ? item.quantity : 1;
         const merchant = item.receiptId ? getMerchantName(item.receiptId) : '—';
         const name = (item.name || '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
-        lines.push(`| ${qty} | ${name} | $${item.price.toFixed(2)} | ${merchant} |`);
+        lines.push(`| ${qty} | ${name} | ${formatPrice(item.price)} | ${merchant} |`);
       });
       if (state.items.length > maxRows) lines.push(`| … | *(${state.items.length - maxRows} more)* | | |`);
     }
@@ -893,7 +947,7 @@
       state.people.forEach((p, idx) => {
         const name = p.name || `Person ${idx + 1}`;
         const amount = (owed[p.id] || 0).toFixed(2);
-        lines.push(`- **${name}:** $${amount}`);
+        lines.push(`- **${name}:** ${formatPrice(amount)}`);
       });
     }
     lines.push('');
@@ -950,6 +1004,99 @@
 
   const reportBugBtn = document.getElementById('report-bug-btn');
   if (reportBugBtn) reportBugBtn.addEventListener('click', reportBug);
+
+  // --- Currency ---
+  const currencyBtn = document.getElementById('currency-btn');
+  const currencyMenu = document.getElementById('currency-menu');
+  const currencyMenuList = document.getElementById('currency-menu-list');
+  const currencyDisplay = document.getElementById('currency-display');
+  const currencyCodeDisplay = document.getElementById('currency-code-display');
+
+  function updateCurrencyDisplay() {
+    if (currencyDisplay) currencyDisplay.textContent = state.currency.symbol || '$';
+    if (currencyCodeDisplay) currencyCodeDisplay.textContent = state.currency.code || 'USD';
+  }
+
+  function setCurrency(c) {
+    state.currency = { symbol: c.symbol || '$', code: c.code || 'USD', name: c.name || '' };
+    updateCurrencyDisplay();
+    renderBillSections();
+    renderSummary();
+    if (currencyMenu) { currencyMenu.classList.add('hidden'); currencyBtn && currencyBtn.setAttribute('aria-expanded', 'false'); }
+  }
+
+  function renderCurrencyMenu() {
+    if (!currencyMenuList) return;
+    currencyMenuList.innerHTML = '';
+    const all = [...CURRENCIES, ...state.customCurrencies];
+    const currentCode = state.currency.code;
+    all.forEach(c => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'currency-menu-option' + (c.code === currentCode ? ' is-selected' : '');
+      btn.setAttribute('role', 'menuitem');
+      btn.textContent = `${c.symbol} ${c.code}${c.name ? ' — ' + c.name : ''}`;
+      btn.onclick = () => setCurrency(c);
+      currencyMenuList.appendChild(btn);
+    });
+  }
+
+  if (currencyBtn && currencyMenu) {
+    currencyBtn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const open = currencyMenu.classList.contains('hidden');
+      currencyMenu.classList.toggle('hidden', !open);
+      currencyBtn.setAttribute('aria-expanded', open);
+      if (open) renderCurrencyMenu();
+    });
+    document.addEventListener('click', () => {
+      if (!currencyMenu.classList.contains('hidden')) {
+        currencyMenu.classList.add('hidden');
+        currencyBtn.setAttribute('aria-expanded', 'false');
+      }
+    });
+  }
+
+  const customCurrencyModal = document.getElementById('custom-currency-modal');
+  const customCurrencyBackdrop = document.getElementById('custom-currency-backdrop');
+  const customCurrencySymbol = document.getElementById('custom-currency-symbol');
+  const customCurrencyCode = document.getElementById('custom-currency-code');
+  const customCurrencyName = document.getElementById('custom-currency-name');
+  const customCurrencyCancel = document.getElementById('custom-currency-cancel');
+  const customCurrencySave = document.getElementById('custom-currency-save');
+  const currencyCustomBtn = document.getElementById('currency-custom-btn');
+
+  function openCustomCurrencyModal() {
+    if (currencyMenu) currencyMenu.classList.add('hidden');
+    if (customCurrencySymbol) customCurrencySymbol.value = '';
+    if (customCurrencyCode) customCurrencyCode.value = '';
+    if (customCurrencyName) customCurrencyName.value = '';
+    if (customCurrencyModal) customCurrencyModal.classList.remove('hidden');
+    customCurrencySymbol && customCurrencySymbol.focus();
+  }
+
+  function closeCustomCurrencyModal() {
+    if (customCurrencyModal) customCurrencyModal.classList.add('hidden');
+  }
+
+  function saveCustomCurrency() {
+    const symbol = (customCurrencySymbol && customCurrencySymbol.value.trim()) || '$';
+    const code = (customCurrencyCode && customCurrencyCode.value.trim()) || 'USD';
+    const name = (customCurrencyName && customCurrencyName.value.trim()) || code;
+    const existing = state.customCurrencies.find(c => c.code === code);
+    if (!existing) state.customCurrencies.push({ symbol, code, name });
+    setCurrency({ symbol, code, name });
+    closeCustomCurrencyModal();
+    renderCurrencyMenu();
+  }
+
+  if (currencyCustomBtn) currencyCustomBtn.addEventListener('click', () => { openCustomCurrencyModal(); });
+  if (customCurrencyBackdrop) customCurrencyBackdrop.addEventListener('click', closeCustomCurrencyModal);
+  if (customCurrencyCancel) customCurrencyCancel.addEventListener('click', closeCustomCurrencyModal);
+  if (customCurrencySave) customCurrencySave.addEventListener('click', saveCustomCurrency);
+  if (customCurrencyModal) customCurrencyModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeCustomCurrencyModal(); });
+
+  updateCurrencyDisplay();
 
   const maxReceiptsNum = document.getElementById('max-receipts-num');
   if (maxReceiptsNum) maxReceiptsNum.textContent = String(MAX_RECEIPTS);
