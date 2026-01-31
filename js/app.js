@@ -208,6 +208,10 @@
         previousUnused = null;
         continue;
       }
+      if (/\b(tip)\b/.test(lower)) {
+        previousUnused = null;
+        continue;
+      }
       if (isMetadataLine(line)) {
         previousUnused = null;
         continue;
@@ -215,7 +219,11 @@
 
       const priceOnly = isPriceOnlyLine(line);
       if (priceOnly != null && previousUnused != null && looksLikeItemName(previousUnused)) {
-        items.push({ name: previousUnused.replace(/\s+/g, ' ').trim(), price: priceOnly, quantity: 1, uncertain: true });
+        const merged = previousUnused.replace(/\s+/g, ' ').trim();
+        const { quantity, name: mergedName } = stripLeadingQuantity(merged);
+        if (looksLikeItemName(mergedName)) {
+          items.push({ name: mergedName, price: priceOnly, quantity, uncertain: true });
+        }
         previousUnused = null;
         continue;
       }
@@ -227,8 +235,15 @@
       let extracted = extractPriceFromEnd(line);
       if (!extracted) extracted = extractPriceAnywhere(line);
       if (!extracted || extracted.price <= 0 || extracted.price >= 10000) {
-        if (looksLikeItemName(line)) previousUnused = line;
-        else previousUnused = null;
+        const startsWithDash = /^[-–—]\s*/.test(line);
+        const looksLikeContinuation = line.length <= 45 && !/^\d+\s*[x×]?\s/.test(line) && /[a-zA-Z]{2,}/.test(line);
+        if (previousUnused != null && (startsWithDash || (looksLikeContinuation && looksLikeItemName(line)))) {
+          previousUnused = previousUnused + ' ' + line.replace(/^[-–—]\s*/, '').trim();
+        } else if (looksLikeItemName(line)) {
+          previousUnused = line;
+        } else {
+          previousUnused = null;
+        }
         continue;
       }
 
@@ -266,19 +281,25 @@
 
   /**
    * Suggest merchant name from first lines of OCR that look like a business name (not address/date).
+   * Prefer lines that look like company names (e.g. contain "Company", "Brewing", "Inc", "LLC").
    */
   function suggestMerchantFromRawText(rawText) {
     const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-    for (let i = 0; i < Math.min(lines.length, 8); i++) {
+    let fallback = null;
+    for (let i = 0; i < Math.min(lines.length, 10); i++) {
       const line = lines[i];
-      if (line.length < 4 || line.length > 60) continue;
+      if (line.length < 4 || line.length > 70) continue;
       if (/^\d+[.,]?\d*$/.test(line)) continue;
-      if (/\b(street|st\.|avenue|ave\.|blvd|road|rd\.|drive|dr\.|server|check\s*#|table|tab)\b/i.test(line)) continue;
-      if (/^\d+\s/.test(line) && line.length < 30) continue;
+      if (/\b(street|st\.|avenue|ave\.|blvd|road|rd\.|drive|dr\.|server|check\s*#|table|tab|ordered)\b/i.test(line)) continue;
+      if (/^\d+\s/.test(line) && line.length < 35) continue;
+      if (/^\d{5}(-\d{4})?\s*$/.test(line)) continue;
       const letters = (line.match(/[a-zA-Z]/g) || []).length;
-      if (letters >= 4) return line.replace(/\s+/g, ' ').trim();
+      if (letters < 4) continue;
+      const clean = line.replace(/\s+/g, ' ').trim();
+      if (/\b(company|co\.|brewing|brewery|inc\.?|llc|restaurant|cafe|grill|bar|kitchen)\b/i.test(clean)) return clean;
+      if (!fallback && /^[A-Za-z]/.test(clean)) fallback = clean;
     }
-    return null;
+    return fallback;
   }
 
   // --- Upload & thumbnails ---
