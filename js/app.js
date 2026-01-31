@@ -10,7 +10,7 @@
 
   // --- State ---
   const state = {
-    receiptFiles: [],       // { id, file, dataUrl?, parsed? }
+    receiptFiles: [],       // { id, file, dataUrl?, parsed?, merchantName }
     people: [],             // [{ id, name }]
     items: [],              // [{ id, name, price, uncertain, receiptId, assigneeIds: [] }]
     warnings: [],           // string[]
@@ -18,6 +18,7 @@
     nextPersonId: 1,
     nextItemId: 1,
     editingItemId: null,
+    editingReceiptId: null,
   };
 
   // --- DOM refs ---
@@ -32,10 +33,10 @@
   const warningsPanel = document.getElementById('warnings-panel');
   const warningsList = document.getElementById('warnings-list');
   const tablePanel = document.getElementById('table-panel');
-  const parsedTbody = document.getElementById('parsed-tbody');
+  const billSections = document.getElementById('bill-sections');
   const tableMeta = document.getElementById('table-meta');
   const summaryPanel = document.getElementById('summary-panel');
-  const summaryTbody = document.getElementById('summary-tbody');
+  const summaryList = document.getElementById('summary-list');
   const copyBtn = document.getElementById('copy-btn');
   const downloadCsvBtn = document.getElementById('download-csv-btn');
   const editModal = document.getElementById('edit-modal');
@@ -133,14 +134,16 @@
   // --- Upload & thumbnails ---
   function addFiles(files) {
     const list = Array.from(files).filter(f => f.type.startsWith('image/'));
-    for (const file of list) {
+    const start = state.receiptFiles.length;
+    list.forEach((file, i) => {
       state.receiptFiles.push({
         id: 'r' + state.nextReceiptId++,
         file,
         dataUrl: null,
         parsed: false,
+        merchantName: 'Receipt ' + (start + i + 1),
       });
-    }
+    });
     renderThumbnails();
     processDataUrls();
   }
@@ -160,7 +163,7 @@
     state.receiptFiles = state.receiptFiles.filter(r => r.id !== id);
     state.items = state.items.filter(i => i.receiptId !== id);
     renderThumbnails();
-    renderParsedTable();
+    renderBillSections();
     renderWarnings();
     renderSummary();
     updateParseButton();
@@ -230,7 +233,7 @@
     updateParseButton();
 
     renderWarnings();
-    renderParsedTable();
+    renderBillSections();
     renderSummary();
     if (state.items.length > 0) {
       show(tablePanel);
@@ -267,7 +270,7 @@
       i.assigneeIds = i.assigneeIds.filter(pid => pid !== id);
     });
     renderPeople();
-    renderParsedTable();
+    renderBillSections();
     renderSummary();
   }
 
@@ -275,6 +278,21 @@
     const p = state.people.find(x => x.id === id);
     if (p) p.name = name;
     renderSummary();
+  }
+
+  function recalculateSplit() {
+    renderBillSections();
+    renderSummary();
+  }
+
+  function getMerchantName(receiptId) {
+    const rec = state.receiptFiles.find(r => r.id === receiptId);
+    return rec ? rec.merchantName : 'Receipt';
+  }
+
+  function setMerchantName(receiptId, name) {
+    const rec = state.receiptFiles.find(r => r.id === receiptId);
+    if (rec) rec.merchantName = (name || '').trim() || rec.merchantName;
   }
 
   function renderPeople() {
@@ -302,59 +320,71 @@
     addPersonBtn.textContent = state.people.length >= MAX_PEOPLE ? 'Maximum 20 people' : '+ Add person';
   }
 
-  // --- Parsed table ---
-  function renderParsedTable() {
-    parsedTbody.innerHTML = '';
+  // --- The bill (grouped by merchant) ---
+  function renderBillSections() {
+    billSections.innerHTML = '';
+    const byReceipt = {};
     state.items.forEach(item => {
-      const tr = document.createElement('tr');
-      tr.dataset.itemId = item.id;
-      if (item.uncertain) tr.classList.add('uncertain');
-      tr.innerHTML = `
-        <td><span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span></td>
-        <td class="col-price"><span class="cell-editable" data-item-id="${item.id}" data-field="price">$${item.price.toFixed(2)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</td>
-        <td class="col-assign"><div class="assign-cell" data-item-id="${item.id}"></div></td>
-        <td class="col-remove"><button type="button" class="btn-remove-item" data-item-id="${item.id}" aria-label="Remove item">×</button></td>
-      `;
-
-      const assignCell = tr.querySelector('.assign-cell');
-      state.people.forEach(person => {
-        const label = document.createElement('label');
-        label.style.display = 'inline-flex';
-        label.style.alignItems = 'center';
-        label.style.gap = '0.25rem';
-        label.style.marginRight = '0.5rem';
-        const check = document.createElement('input');
-        check.type = 'checkbox';
-        check.checked = item.assigneeIds.includes(person.id);
-        check.onchange = () => {
-          if (check.checked) {
-            if (!item.assigneeIds.includes(person.id)) item.assigneeIds.push(person.id);
-          } else {
-            item.assigneeIds = item.assigneeIds.filter(pid => pid !== person.id);
-          }
-          renderParsedTable();
-          renderSummary();
-        };
-        label.appendChild(check);
-        label.appendChild(document.createTextNode(person.name || `Person ${state.people.indexOf(person) + 1}`));
-        assignCell.appendChild(label);
-      });
-      if (state.people.length === 0) {
-        const span = document.createElement('span');
-        span.className = 'assign-empty';
-        span.textContent = 'Add people above to assign';
-        assignCell.appendChild(span);
-      }
-
-      const removeBtn = tr.querySelector('.btn-remove-item');
-      if (removeBtn) removeBtn.onclick = () => removeItem(item.id);
-
-      parsedTbody.appendChild(tr);
+      const rid = item.receiptId || 'unsorted';
+      if (!byReceipt[rid]) byReceipt[rid] = [];
+      byReceipt[rid].push(item);
     });
+    const receiptOrder = state.receiptFiles.filter(r => (byReceipt[r.id] || []).length > 0).map(r => r.id);
+    if ((byReceipt.unsorted || []).length > 0) receiptOrder.push('unsorted');
 
-    // Editable cells
-    parsedTbody.querySelectorAll('.cell-editable').forEach(el => {
-      el.addEventListener('click', () => openEditModal(el.dataset.itemId, el.dataset.field));
+    receiptOrder.forEach(receiptId => {
+      const items = byReceipt[receiptId] || [];
+      const section = document.createElement('div');
+      section.className = 'bill-section';
+      const merchantName = receiptId === 'unsorted' ? 'Other items' : getMerchantName(receiptId);
+      section.innerHTML = `
+        <div class="bill-section-header">
+          <span class="merchant-name">${escapeHtml(merchantName)}</span>
+          ${receiptId !== 'unsorted' ? '<button type="button" class="btn-edit-merchant" data-receipt-id="' + receiptId + '" aria-label="Edit merchant name">Edit</button>' : ''}
+        </div>
+      `;
+      const header = section.querySelector('.bill-section-header');
+      const editBtn = section.querySelector('.btn-edit-merchant');
+      if (editBtn) editBtn.addEventListener('click', () => openMerchantModal(editBtn.dataset.receiptId));
+
+      items.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'bill-item-card' + (item.uncertain ? ' uncertain' : '');
+        card.innerHTML = `
+          <div class="bill-item-name"><span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</div>
+          <div class="bill-item-price"><span class="cell-editable" data-item-id="${item.id}" data-field="price">$${item.price.toFixed(2)}</span></div>
+          <div class="bill-item-assign"></div>
+          <button type="button" class="bill-item-remove" data-item-id="${item.id}" aria-label="Remove item">×</button>
+        `;
+        const assignEl = card.querySelector('.bill-item-assign');
+        if (state.people.length === 0) {
+          const span = document.createElement('span');
+          span.className = 'assign-empty';
+          span.textContent = 'Add people above';
+          assignEl.appendChild(span);
+        } else {
+          state.people.forEach(person => {
+            const label = document.createElement('label');
+            const check = document.createElement('input');
+            check.type = 'checkbox';
+            check.checked = item.assigneeIds.includes(person.id);
+            check.onchange = () => {
+              if (check.checked) item.assigneeIds.push(person.id);
+              else item.assigneeIds = item.assigneeIds.filter(pid => pid !== person.id);
+              recalculateSplit();
+            };
+            label.appendChild(check);
+            label.appendChild(document.createTextNode(person.name || `P${state.people.indexOf(person) + 1}`));
+            assignEl.appendChild(label);
+          });
+        }
+        card.querySelector('.bill-item-remove').addEventListener('click', () => removeItem(item.id));
+        card.querySelectorAll('.cell-editable').forEach(el => {
+          el.addEventListener('click', () => openEditModal(el.dataset.itemId, el.dataset.field));
+        });
+        section.appendChild(card);
+      });
+      billSections.appendChild(section);
     });
 
     const total = state.items.reduce((s, i) => s + i.price, 0);
@@ -362,6 +392,31 @@
     tableMeta.textContent = `Total: $${total.toFixed(2)}${state.people.length ? ` · Assigned: $${assigned.toFixed(2)}` : ''}`;
 
     if (state.items.length > 0) show(tablePanel); else hide(tablePanel);
+  }
+
+  function openMerchantModal(receiptId) {
+    const rec = state.receiptFiles.find(r => r.id === receiptId);
+    if (!rec) return;
+    state.editingReceiptId = receiptId;
+    const input = document.getElementById('merchant-name-input');
+    input.value = rec.merchantName;
+    const modal = document.getElementById('merchant-modal');
+    modal.classList.remove('hidden');
+    input.focus();
+  }
+
+  function closeMerchantModal() {
+    state.editingReceiptId = null;
+    document.getElementById('merchant-modal').classList.add('hidden');
+  }
+
+  function saveMerchant() {
+    if (!state.editingReceiptId) { closeMerchantModal(); return; }
+    const input = document.getElementById('merchant-name-input');
+    setMerchantName(state.editingReceiptId, input.value.trim());
+    closeMerchantModal();
+    renderBillSections();
+    renderSummary();
   }
 
   function openEditModal(itemId, field) {
@@ -390,11 +445,10 @@
       item.uncertain = false;
     }
     closeEditModal();
-    renderParsedTable();
+    renderBillSections();
     renderSummary();
   }
 
-  // Add row / remove row (optional — add buttons in UI if desired)
   function addItemRow() {
     state.items.push({
       id: 'i' + state.nextItemId++,
@@ -404,13 +458,13 @@
       receiptId: null,
       assigneeIds: [],
     });
-    renderParsedTable();
+    renderBillSections();
     renderSummary();
   }
 
   function removeItem(id) {
     state.items = state.items.filter(i => i.id !== id);
-    renderParsedTable();
+    renderBillSections();
     renderSummary();
   }
 
@@ -426,17 +480,50 @@
     return owed;
   }
 
+  function getPerPersonBreakdown() {
+    const breakdown = {};
+    state.people.forEach(p => { breakdown[p.id] = []; });
+    state.items.forEach(item => {
+      if (item.assigneeIds.length === 0) return;
+      const share = item.price / item.assigneeIds.length;
+      const merchant = item.receiptId ? getMerchantName(item.receiptId) : 'Other';
+      item.assigneeIds.forEach(pid => {
+        if (!breakdown[pid]) breakdown[pid] = [];
+        breakdown[pid].push({ merchant, itemName: item.name, amount: share });
+      });
+    });
+    return breakdown;
+  }
+
   function renderSummary() {
     const owed = computeSplit();
-    summaryTbody.innerHTML = '';
+    const breakdown = getPerPersonBreakdown();
+    summaryList.innerHTML = '';
     state.people.forEach((p, idx) => {
       const amount = owed[p.id] || 0;
-      const tr = document.createElement('tr');
-      tr.innerHTML = `
-        <td>${escapeHtml(p.name || `Person ${idx + 1}`)}</td>
-        <td class="col-amount">$${amount.toFixed(2)}</td>
+      const lines = breakdown[p.id] || [];
+      const byMerchant = {};
+      lines.forEach(({ merchant, itemName, amount: amt }) => {
+        if (!byMerchant[merchant]) byMerchant[merchant] = [];
+        byMerchant[merchant].push({ itemName, amount: amt });
+      });
+      const card = document.createElement('div');
+      card.className = 'summary-person-card';
+      let breakdownHtml = '';
+      Object.keys(byMerchant).forEach(merchant => {
+        breakdownHtml += '<div class="breakdown-merchant">' + escapeHtml(merchant) + '</div>';
+        byMerchant[merchant].forEach(({ itemName, amount: amt }) => {
+          breakdownHtml += '<div class="breakdown-line">' + escapeHtml(itemName) + ' · $' + amt.toFixed(2) + '</div>';
+        });
+      });
+      card.innerHTML = `
+        <div class="summary-person-header">
+          <span class="summary-person-name">${escapeHtml(p.name || `Person ${idx + 1}`)}</span>
+          <span class="summary-person-amount">$${amount.toFixed(2)}</span>
+        </div>
+        ${breakdownHtml ? '<div class="summary-person-breakdown">' + breakdownHtml + '</div>' : ''}
       `;
-      summaryTbody.appendChild(tr);
+      summaryList.appendChild(card);
     });
     if (state.people.length > 0) show(summaryPanel); else hide(summaryPanel);
   }
@@ -477,7 +564,7 @@
   }
 
   /**
-   * Per-person expense list for image: { personName, lines: [{ label, amount }], subtotal }
+   * Per-person expense list for image: { personName, lines: [{ label, amount, merchant }], subtotal }
    */
   function getPerPersonExpenses() {
     return state.people.map((p, idx) => {
@@ -486,10 +573,11 @@
       state.items.forEach(item => {
         if (!item.assigneeIds.includes(p.id)) return;
         const share = item.price / item.assigneeIds.length;
+        const merchant = item.receiptId ? getMerchantName(item.receiptId) : '';
         const label = item.assigneeIds.length > 1
           ? `${item.name} (${item.assigneeIds.length}-way split)`
           : item.name;
-        lines.push({ label, amount: share });
+        lines.push({ label, amount: share, merchant });
       });
       const subtotal = lines.reduce((s, l) => s + l.amount, 0);
       return { personName: name, lines, subtotal };
@@ -497,54 +585,53 @@
   }
 
   /**
-   * Draw summary image on canvas with billzy branding; return canvas.
+   * Draw summary image — Apple-style, blue/purple theme, merchant in lines.
    */
   function drawSummaryCanvas() {
     const dpr = 2;
-    const width = 400 * dpr;
-    const padding = 24 * dpr;
-    const lineHeight = 20 * dpr;
-    const sectionGap = 28 * dpr;
-    const fontTitle = `${22 * dpr}px system-ui, -apple-system, sans-serif`;
-    const fontBrand = `${28 * dpr}px system-ui, -apple-system, sans-serif`;
-    const fontSub = `${14 * dpr}px system-ui, -apple-system, sans-serif`;
-    const fontSmall = `${12 * dpr}px system-ui, -apple-system, sans-serif`;
+    const width = 420 * dpr;
+    const padding = 32 * dpr;
+    const lineHeight = 22 * dpr;
+    const sectionGap = 32 * dpr;
+    const fontTitle = `${20 * dpr}px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`;
+    const fontBrand = `${30 * dpr}px -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif`;
+    const fontSub = `${15 * dpr}px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`;
+    const fontSmall = `${12 * dpr}px -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif`;
 
     const data = getPerPersonExpenses();
-    const teal = '#0d9488';
-    const tealDark = '#0f766e';
-    const gray = '#475569';
-    const grayLight = '#94a3b8';
+    const blue = '#2563eb';
+    const purple = '#7c3aed';
+    const gray = '#3d3d3d';
+    const grayLight = '#8e8e93';
 
     const canvas = document.createElement('canvas');
     const ctx = canvas.getContext('2d');
     if (!ctx) return null;
 
-    // Compute height from content
-    let height = padding * 2 + lineHeight * 1.4 + lineHeight + sectionGap * 2;
+    let height = padding * 2 + lineHeight * 1.6 + lineHeight + sectionGap * 2;
     data.forEach(({ lines }) => {
-      height += lineHeight * 1.3 + lines.length * lineHeight + lineHeight + sectionGap;
+      height += lineHeight * 1.5 + lines.length * lineHeight + lineHeight + sectionGap;
     });
-    height += sectionGap + lineHeight * 2 + padding;
+    height += sectionGap + lineHeight * 2 + padding * 2;
     canvas.width = width;
-    canvas.height = Math.max(400 * dpr, height);
+    canvas.height = Math.max(480 * dpr, height);
 
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(0, 0, width, canvas.height);
 
     let y = padding * 2;
 
-    // Brand block
-    ctx.fillStyle = teal;
+    // Brand — gradient text effect via fill
     ctx.font = fontBrand;
+    ctx.fillStyle = blue;
     ctx.fillText('billzy', padding, y);
-    y += lineHeight * 1.4;
-    ctx.fillStyle = tealDark;
+    y += lineHeight * 1.6;
     ctx.font = fontSmall;
-    ctx.fillText('Scan → Parse → Split. No account, no saving.', padding, y);
+    ctx.fillStyle = grayLight;
+    ctx.fillText('Scan. Parse. Split. Instant, private, done.', padding, y);
     y += sectionGap;
 
-    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeStyle = '#e5e5ea';
     ctx.lineWidth = 1;
     ctx.beginPath();
     ctx.moveTo(padding, y);
@@ -552,39 +639,51 @@
     ctx.stroke();
     y += sectionGap;
 
-    // Per-person blocks
     data.forEach(({ personName, lines, subtotal }) => {
-      ctx.fillStyle = gray;
       ctx.font = fontTitle;
+      ctx.fillStyle = gray;
       ctx.fillText(personName, padding, y);
-      y += lineHeight * 1.3;
+      y += lineHeight * 1.5;
 
+      const byMerchant = {};
+      lines.forEach(l => {
+        const m = l.merchant || 'Other';
+        if (!byMerchant[m]) byMerchant[m] = [];
+        byMerchant[m].push(l);
+      });
       ctx.font = fontSub;
-      lines.forEach(({ label, amount }) => {
-        const amtStr = `$${amount.toFixed(2)}`;
-        ctx.fillStyle = '#1e293b';
-        const maxLabelW = width - padding * 2 - 80 * dpr;
-        const truncated = ctx.measureText(label).width > maxLabelW
-          ? label.slice(0, Math.floor(label.length * maxLabelW / ctx.measureText(label).width)) + '…'
-          : label;
-        ctx.fillText(truncated, padding, y);
-        ctx.fillStyle = tealDark;
-        ctx.fillText(amtStr, width - padding - ctx.measureText(amtStr).width, y);
-        y += lineHeight;
+      Object.keys(byMerchant).forEach(merchant => {
+        ctx.fillStyle = grayLight;
+        ctx.font = fontSmall;
+        ctx.fillText(merchant, padding, y);
+        y += lineHeight * 0.85;
+        ctx.font = fontSub;
+        ctx.fillStyle = '#1c1c1e';
+        byMerchant[merchant].forEach(({ label, amount }) => {
+          const amtStr = `$${amount.toFixed(2)}`;
+          const maxLabelW = width - padding * 2 - 85 * dpr;
+          const truncated = ctx.measureText(label).width > maxLabelW
+            ? label.slice(0, Math.floor(label.length * maxLabelW / ctx.measureText(label).width)) + '…'
+            : label;
+          ctx.fillText(truncated, padding, y);
+          ctx.fillStyle = purple;
+          ctx.fillText(amtStr, width - padding - ctx.measureText(amtStr).width, y);
+          ctx.fillStyle = '#1c1c1e';
+          y += lineHeight;
+        });
       });
 
       ctx.font = fontSub;
-      ctx.fillStyle = gray;
+      ctx.fillStyle = grayLight;
       ctx.fillText('Subtotal', padding, y);
       ctx.font = fontTitle;
-      ctx.fillStyle = tealDark;
+      ctx.fillStyle = purple;
       const subStr = `$${subtotal.toFixed(2)}`;
       ctx.fillText(subStr, width - padding - ctx.measureText(subStr).width, y);
       y += lineHeight + sectionGap;
     });
 
-    // Footer line
-    ctx.strokeStyle = '#e2e8f0';
+    ctx.strokeStyle = '#e5e5ea';
     ctx.beginPath();
     ctx.moveTo(padding, y);
     ctx.lineTo(width - padding, y);
@@ -640,6 +739,19 @@
   });
 
   addPersonBtn.addEventListener('click', addPerson);
+
+  const recalculateBtn = document.getElementById('recalculate-split-btn');
+  if (recalculateBtn) recalculateBtn.addEventListener('click', recalculateSplit);
+
+  const merchantModal = document.getElementById('merchant-modal');
+  const merchantBackdrop = document.getElementById('merchant-modal-backdrop');
+  const merchantNameInput = document.getElementById('merchant-name-input');
+  const merchantCancel = document.getElementById('merchant-cancel');
+  const merchantSave = document.getElementById('merchant-save');
+  if (merchantBackdrop) merchantBackdrop.addEventListener('click', closeMerchantModal);
+  if (merchantCancel) merchantCancel.addEventListener('click', closeMerchantModal);
+  if (merchantSave) merchantSave.addEventListener('click', saveMerchant);
+  if (merchantModal) merchantModal.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMerchantModal(); });
 
   copyBtn.addEventListener('click', copyResult);
   downloadCsvBtn.addEventListener('click', downloadCsv);

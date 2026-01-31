@@ -1,6 +1,6 @@
 # billzy
 
-**Scan → Parse → Split.** No account. No saving. No backend.
+**Scan. Parse. Split.** Instant, private, done. No backend.
 
 A static, mobile-first web app that lets you upload receipt images, parse them with client-side OCR, and split the bill among up to 20 people. Everything runs in the browser; nothing is stored or sent to a server.
 

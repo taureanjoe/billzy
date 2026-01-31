@@ -3,14 +3,14 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-  <meta name="theme-color" content="#0d9488" />
+  <meta name="theme-color" content="#2563eb" />
   <title>billzy — Split receipts instantly</title>
   <link rel="stylesheet" href="css/main.css" />
 </head>
 <body>
   <header class="header">
     <h1 class="logo">billzy</h1>
-    <p class="tagline">Scan → Parse → Split. No account, no saving.</p>
+    <p class="tagline">Scan. Parse. Split. Instant, private, done.</p>
   </header>
 
   <main class="main">
@@ -35,11 +35,13 @@
         <h2 class="panel-title">Split with</h2>
         <span class="toggle-icon" aria-hidden="true"></span>
       </button>
+      <p class="split-with-hint">Who’s in on the split? Add names below — the split updates automatically. No need to re-parse.</p>
       <div class="people-list" id="people-list" hidden>
         <div class="people-slots" id="people-slots"></div>
-        <button type="button" class="btn btn-ghost add-person-btn" id="add-person-btn">
-          + Add person
-        </button>
+        <div class="people-actions">
+          <button type="button" class="btn btn-ghost add-person-btn" id="add-person-btn">+ Add person</button>
+          <button type="button" class="btn btn-secondary btn-recalculate" id="recalculate-split-btn">Recalculate split</button>
+        </div>
         <p class="people-hint">Up to 20 people. Names are for this session only.</p>
       </div>
     </section>
@@ -53,23 +55,11 @@
       <ul class="warnings-list" id="warnings-list"></ul>
     </section>
 
-    <!-- Parsed items table -->
+    <!-- The bill (grouped by merchant) -->
     <section class="panel table-panel hidden" id="table-panel">
-      <h2 class="panel-title">Parsed items</h2>
+      <h2 class="panel-title">The bill</h2>
       <p class="table-hint">Tap a cell to edit. Assign each item to who pays.</p>
-      <div class="table-wrap">
-        <table class="parsed-table" id="parsed-table">
-          <thead>
-            <tr>
-              <th>Item</th>
-              <th class="col-price">Price</th>
-              <th class="col-assign">Assign to</th>
-              <th class="col-remove" aria-label="Remove"></th>
-            </tr>
-          </thead>
-          <tbody id="parsed-tbody"></tbody>
-        </table>
-      </div>
+      <div class="bill-sections" id="bill-sections"></div>
       <div class="table-meta" id="table-meta"></div>
       <button type="button" class="btn btn-ghost add-item-btn" id="add-item-btn">+ Add item</button>
     </section>
@@ -77,17 +67,7 @@
     <!-- Summary / split result -->
     <section class="panel summary-panel hidden" id="summary-panel">
       <h2 class="panel-title">Split summary</h2>
-      <div class="summary-table-wrap">
-        <table class="summary-table" id="summary-table">
-          <thead>
-            <tr>
-              <th>Person</th>
-              <th class="col-amount">Amount owed</th>
-            </tr>
-          </thead>
-          <tbody id="summary-tbody"></tbody>
-        </table>
-      </div>
+      <div class="summary-list" id="summary-list"></div>
       <div class="summary-actions">
         <button type="button" class="btn btn-primary" id="copy-btn">Copy result</button>
         <button type="button" class="btn btn-secondary" id="download-csv-btn">Download CSV</button>
@@ -103,6 +83,20 @@
       <p>billzy does not collect, store, or transmit your receipts or personal data. All processing happens in your browser. This tool is for convenience only and does not constitute legal, tax, or financial advice. Use at your own discretion.</p>
     </div>
   </footer>
+
+  <!-- Edit merchant modal -->
+  <div class="modal hidden" id="merchant-modal" role="dialog" aria-labelledby="merchant-modal-title" aria-modal="true">
+    <div class="modal-backdrop" id="merchant-modal-backdrop"></div>
+    <div class="modal-content">
+      <h3 id="merchant-modal-title">Merchant name</h3>
+      <label class="modal-label">Name (e.g. McDonald's, Starbucks)</label>
+      <input type="text" class="modal-input" id="merchant-name-input" placeholder="Receipt 1" />
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="merchant-cancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="merchant-save">Save</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Edit modal (inline for item/price) -->
   <div class="modal hidden" id="edit-modal" role="dialog" aria-labelledby="edit-modal-title" aria-modal="true">

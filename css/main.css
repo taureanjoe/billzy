@@ -1,9 +1,11 @@
-/* billzy — mobile-first receipt splitter */
+/* billzy — mobile-first receipt splitter (blue & purple theme) */
 
 :root {
-  --teal: #0d9488;
-  --teal-dark: #0f766e;
-  --teal-light: #ccfbf1;
+  --primary: #2563eb;
+  --primary-dark: #1d4ed8;
+  --secondary: #7c3aed;
+  --secondary-light: #a78bfa;
+  --accent-light: #e0e7ff;
   --gray-50: #f8fafc;
   --gray-100: #f1f5f9;
   --gray-200: #e2e8f0;
@@ -12,10 +14,12 @@
   --gray-800: #1e293b;
   --warn-bg: #fef3c7;
   --warn-border: #f59e0b;
-  --radius: 12px;
-  --radius-sm: 8px;
-  --shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
-  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --radius: 14px;
+  --radius-sm: 10px;
+  --radius-card: 12px;
+  --shadow: 0 1px 3px rgba(0, 0, 0, 0.06);
+  --shadow-md: 0 4px 14px rgba(0, 0, 0, 0.08);
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.04);
 }
 
 *,
@@ -36,7 +40,7 @@ body {
 
 .header {
   padding: 1rem 1.25rem 0.75rem;
-  background: linear-gradient(135deg, var(--teal) 0%, var(--teal-dark) 100%);
+  background: linear-gradient(135deg, var(--primary) 0%, var(--secondary) 100%);
   color: white;
 }
 
@@ -125,8 +129,8 @@ body {
 .dropzone:focus-visible,
 .dropzone.dragover {
   outline: none;
-  border-color: var(--teal);
-  background: var(--teal-light);
+  border-color: var(--primary);
+  background: var(--accent-light);
 }
 
 .dropzone-icon {
@@ -209,14 +213,14 @@ body {
 }
 
 .btn-primary {
-  background: var(--teal);
+  background: var(--primary);
   color: white;
   width: 100%;
 }
 
 .btn-primary:not(:disabled):hover,
 .btn-primary:not(:disabled):focus-visible {
-  background: var(--teal-dark);
+  background: var(--primary-dark);
 }
 
 .btn-secondary {
@@ -233,16 +237,34 @@ body {
 
 .btn-ghost {
   background: transparent;
-  color: var(--teal);
+  color: var(--primary);
 }
 
 .btn-ghost:hover,
 .btn-ghost:focus-visible {
-  background: var(--teal-light);
+  background: var(--accent-light);
+}
+
+.split-with-hint {
+  margin: 0 0 0.75rem;
+  font-size: 0.8125rem;
+  color: var(--gray-600);
+  line-height: 1.45;
+}
+
+.people-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.btn-recalculate {
+  width: 100%;
 }
 
 .add-person-btn {
-  margin-top: 0.5rem;
+  margin-top: 0;
   width: 100%;
 }
 
@@ -332,99 +354,157 @@ body {
   margin-bottom: 0.25rem;
 }
 
-/* Table */
+/* The bill — Apple-style sections by merchant */
 .table-hint {
-  margin: 0 0 0.75rem;
+  margin: 0 0 1rem;
   font-size: 0.8125rem;
-  color: var(--gray-400);
+  color: var(--gray-500);
+  line-height: 1.4;
 }
 
-.table-wrap {
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  margin: 0 -0.5rem;
+.bill-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
 }
 
-.parsed-table {
-  width: 100%;
-  min-width: 280px;
-  border-collapse: collapse;
-  font-size: 0.875rem;
+.bill-section {
+  background: var(--gray-50);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--gray-200);
 }
 
-.parsed-table th,
-.parsed-table td {
-  padding: 0.5rem 0.5rem;
-  text-align: left;
+.bill-section-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.875rem 1rem;
+  background: white;
   border-bottom: 1px solid var(--gray-200);
-}
-
-.parsed-table th {
   font-weight: 600;
-  color: var(--gray-600);
+  font-size: 0.9375rem;
+  color: var(--gray-800);
+}
+
+.bill-section-header .merchant-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.bill-section-header .btn-edit-merchant {
+  padding: 0.35rem 0.5rem;
+  margin: -0.35rem -0.5rem;
+  border: none;
+  background: none;
   font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
+  color: var(--primary);
+  cursor: pointer;
+  border-radius: var(--radius-sm);
 }
 
-.parsed-table .col-price {
-  width: 5rem;
-  text-align: right;
+.bill-section-header .btn-edit-merchant:hover {
+  background: var(--accent-light);
 }
 
-.parsed-table .col-assign {
-  min-width: 7rem;
+.bill-item-card {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.875rem 1rem;
+  background: white;
+  border-bottom: 1px solid var(--gray-100);
+  font-size: 0.9375rem;
+  min-height: 52px;
 }
 
-.parsed-table .col-remove {
-  width: 2.5rem;
-  text-align: center;
+.bill-item-card:last-child {
+  border-bottom: none;
 }
 
-.parsed-table .btn-remove-item {
-  padding: 0.25rem;
+.bill-item-card.uncertain {
+  background: var(--warn-bg);
+}
+
+.bill-item-name {
+  flex: 1;
+  min-width: 0;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.bill-item-name .cell-editable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.bill-item-name .cell-editable:hover {
+  background: var(--gray-100);
+}
+
+.bill-item-price {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  color: var(--gray-800);
+}
+
+.bill-item-price .cell-editable {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 2px 4px;
+  margin: -2px -4px;
+}
+
+.bill-item-price .cell-editable:hover {
+  background: var(--gray-100);
+}
+
+.bill-item-assign {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  align-items: center;
+  max-width: 140px;
+  justify-content: flex-end;
+}
+
+.bill-item-assign label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.75rem;
+  color: var(--gray-600);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.bill-item-remove {
+  flex-shrink: 0;
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border: none;
   background: transparent;
   color: var(--gray-400);
   font-size: 1.1rem;
   line-height: 1;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: 50%;
 }
 
-.parsed-table .btn-remove-item:hover {
+.bill-item-remove:hover {
   color: #b91c1c;
   background: var(--gray-100);
 }
 
-.add-item-btn {
-  margin-top: 0.75rem;
-  width: 100%;
-}
-
-.parsed-table td.col-price {
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-
-.parsed-table tr.uncertain td {
-  background: var(--warn-bg);
-}
-
-.parsed-table .cell-editable {
-  cursor: pointer;
-  border-radius: 4px;
-}
-
-.cell-editable:hover {
-  background: var(--gray-100);
-}
-
-.assign-cell {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.25rem;
-  align-items: center;
+.assign-empty {
+  font-size: 0.75rem;
+  color: var(--gray-400);
 }
 
 .assign-chip {
@@ -433,8 +513,8 @@ body {
   padding: 0.2rem 0.5rem;
   border-radius: 999px;
   font-size: 0.7rem;
-  background: var(--teal-light);
-  color: var(--teal-dark);
+  background: var(--accent-light);
+  color: var(--primary-dark);
 }
 
 .assign-empty {
@@ -450,42 +530,73 @@ body {
 }
 
 .table-meta {
-  margin-top: 0.75rem;
+  margin-top: 1rem;
   font-size: 0.8125rem;
   color: var(--gray-600);
 }
 
-/* Summary */
-.summary-table-wrap {
-  overflow-x: auto;
-}
-
-.summary-table {
+.add-item-btn {
+  margin-top: 0.75rem;
   width: 100%;
-  border-collapse: collapse;
-  font-size: 0.9375rem;
 }
 
-.summary-table th,
-.summary-table td {
-  padding: 0.75rem 0.5rem;
+/* Split summary — person cards with breakdown */
+.summary-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.summary-person-card {
+  background: var(--gray-50);
+  border-radius: var(--radius-card);
+  overflow: hidden;
+  border: 1px solid var(--gray-200);
+  box-shadow: var(--shadow-card);
+}
+
+.summary-person-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem;
+  background: white;
   border-bottom: 1px solid var(--gray-200);
 }
 
-.summary-table th {
+.summary-person-name {
   font-weight: 600;
-  color: var(--gray-600);
-  text-align: left;
+  font-size: 1rem;
+  color: var(--gray-800);
 }
 
-.summary-table .col-amount {
-  text-align: right;
+.summary-person-amount {
+  font-weight: 600;
+  font-size: 1rem;
   font-variant-numeric: tabular-nums;
+  color: var(--primary-dark);
 }
 
-.summary-table td.col-amount {
+.summary-person-breakdown {
+  padding: 0.75rem 1rem;
+  font-size: 0.8125rem;
+  color: var(--gray-600);
+  line-height: 1.5;
+}
+
+.summary-person-breakdown .breakdown-merchant {
   font-weight: 600;
-  color: var(--teal-dark);
+  color: var(--gray-800);
+  margin-top: 0.5rem;
+}
+
+.summary-person-breakdown .breakdown-merchant:first-child {
+  margin-top: 0;
+}
+
+.summary-person-breakdown .breakdown-line {
+  margin-left: 0.75rem;
+  margin-top: 0.2rem;
 }
 
 /* Modal */
@@ -586,12 +697,22 @@ body {
 }
 
 @media (min-width: 480px) {
+  .people-actions {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+  .people-actions .btn {
+    flex: 1;
+    min-width: 140px;
+  }
   .summary-actions {
     flex-direction: row;
+    flex-wrap: wrap;
   }
   .summary-actions .btn {
     width: auto;
     flex: 1;
+    min-width: 120px;
   }
 }
 
