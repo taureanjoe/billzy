@@ -149,11 +149,17 @@ body {
   margin-top: 0.25rem;
 }
 
+.receipt-count-hint {
+  margin: 0.75rem 0 0;
+  font-size: 0.8125rem;
+  color: var(--gray-500);
+}
+
 .receipt-thumbnails {
   display: flex;
   flex-wrap: wrap;
   gap: 0.5rem;
-  margin-top: 1rem;
+  margin-top: 0.5rem;
   min-height: 0;
 }
 
@@ -354,7 +360,7 @@ body {
   margin-bottom: 0.25rem;
 }
 
-/* The bill — Apple-style sections by merchant */
+/* List of items — sections by merchant */
 .table-hint {
   margin: 0 0 1rem;
   font-size: 0.8125rem;
@@ -408,6 +414,49 @@ body {
   background: var(--accent-light);
 }
 
+.bill-list-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 1rem;
+  background: var(--gray-100);
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--gray-600);
+  border-bottom: 1px solid var(--gray-200);
+}
+
+.bill-list-header-qty {
+  width: 2.25rem;
+  min-width: 2.25rem;
+  flex-shrink: 0;
+  text-align: center;
+}
+
+.bill-list-header-name {
+  flex: 1;
+  min-width: 0;
+}
+
+.bill-list-header-price {
+  flex-shrink: 0;
+  text-align: right;
+  width: 4rem;
+}
+
+.bill-list-header-assign {
+  flex-shrink: 0;
+  max-width: 140px;
+  text-align: right;
+}
+
+.bill-list-header-remove {
+  flex-shrink: 0;
+  width: 32px;
+}
+
 .bill-item-card {
   display: flex;
   align-items: flex-start;
@@ -436,6 +485,32 @@ body {
   overflow-wrap: break-word;
   word-break: break-word;
   line-height: 1.4;
+}
+
+.bill-item-qty-cell {
+  flex-shrink: 0;
+  width: 2.25rem;
+  min-width: 2.25rem;
+  font-size: 0.9375rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  align-self: center;
+}
+
+.bill-item-qty-cell .cell-editable-qty {
+  cursor: pointer;
+  border-radius: 6px;
+  padding: 0.25rem 0.35rem;
+  min-width: 1.5rem;
+  text-align: center;
+}
+
+.bill-item-qty-cell .cell-editable-qty:hover {
+  background: var(--accent-light);
 }
 
 .bill-item-qty {
@@ -743,6 +818,15 @@ body {
   font-size: 0.75rem;
   color: var(--gray-400);
   line-height: 1.5;
+}
+
+.footer-report-bug {
+  display: inline-block;
+  margin-top: 0.5rem;
+  margin-right: 0.75rem;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.7rem;
+  min-height: 0;
 }
 
 .footer-legal-toggle {

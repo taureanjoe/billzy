@@ -10,7 +10,7 @@
 <body>
   <header class="header">
     <h1 class="logo">billzy</h1>
-    <p class="tagline">Scan. Parse. Split. Instant, private, done.</p>
+    <p class="tagline">Scan → Parse → Split. Instant, private, done.</p>
   </header>
 
   <main class="main">
@@ -21,8 +21,9 @@
         <input type="file" id="file-input" accept="image/jpeg,image/png,image/webp" multiple hidden />
         <span class="dropzone-icon" aria-hidden="true">📷</span>
         <span class="dropzone-text">Drop images here or tap to browse</span>
-        <span class="dropzone-hint">JPG, PNG · Multiple receipts OK</span>
+        <span class="dropzone-hint">JPG, PNG · Up to <span id="max-receipts-num">10</span> receipts</span>
       </div>
+      <p class="receipt-count-hint" id="receipt-count-hint">0 / 10 receipts</p>
       <div class="receipt-thumbnails" id="receipt-thumbnails"></div>
       <div class="actions" id="parse-actions">
         <button type="button" class="btn btn-primary" id="parse-all-btn" disabled>Parse all receipts</button>
@@ -55,9 +56,9 @@
       <ul class="warnings-list" id="warnings-list"></ul>
     </section>
 
-    <!-- The bill (grouped by merchant) -->
+    <!-- List of items (grouped by merchant) -->
     <section class="panel table-panel hidden" id="table-panel">
-      <h2 class="panel-title">The bill</h2>
+      <h2 class="panel-title">List of items</h2>
       <p class="table-hint">Tap a cell to edit. Assign each item to who pays.</p>
       <div class="bill-sections" id="bill-sections"></div>
       <div class="table-meta" id="table-meta"></div>
@@ -78,6 +79,7 @@
 
   <footer class="footer">
     <p class="footer-notice">No account. No data stored. Everything stays on your device.</p>
+    <button type="button" class="btn btn-ghost footer-report-bug" id="report-bug-btn">Report bug</button>
     <button type="button" class="footer-legal-toggle" id="legal-toggle" aria-expanded="false" aria-controls="legal-notice">Privacy & legal</button>
     <div class="footer-legal hidden" id="legal-notice" aria-hidden="true">
       <p>billzy does not collect, store, or transmit your receipts or personal data. All processing happens in your browser. This tool is for convenience only and does not constitute legal, tax, or financial advice. Use at your own discretion.</p>

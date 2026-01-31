@@ -7,6 +7,8 @@
   'use strict';
 
   const MAX_PEOPLE = 20;
+  const MAX_RECEIPTS = 10;
+  const GITHUB_REPO = 'taureanjoe/billzy';
 
   // --- State ---
   const state = {
@@ -82,7 +84,6 @@
 
   /**
    * Extract price from end of string: last $X.XX or X.XX (2 decimals). Returns { price, rest } or null.
-   * Uses last occurrence so "item name 12.00" or "item $12.00" both work.
    */
   function extractPriceFromEnd(str) {
     const withDollar = str.match(/\s+(\$\s*)(\d+[.,]\d{2})\s*$/);
@@ -96,6 +97,25 @@
       const price = parseFloat(twoDecimals[1].replace(',', '.'));
       const rest = str.slice(0, str.length - twoDecimals[0].length).trim();
       return rest.length > 0 ? { price, rest } : null;
+    }
+    return null;
+  }
+
+  /**
+   * Fallback: find last price-like number ($X.XX or X.XX, 0.01–9999.99) in line.
+   * Handles OCR that mangles spacing (e.g. "Item Name$12.00").
+   */
+  function extractPriceAnywhere(str) {
+    const re = /\$?\s*(\d{1,4}[.,]\d{2})(?=\s*$|[\s,]|\D)/g;
+    let match;
+    let lastMatch = null;
+    while ((match = re.exec(str)) !== null) lastMatch = match;
+    if (lastMatch) {
+      const price = parseFloat(lastMatch[1].replace(',', '.'));
+      if (price >= 0.01 && price < 10000) {
+        const rest = str.slice(0, lastMatch.index).replace(/\s*\$?\s*$/, '').trim();
+        return rest.length > 0 ? { price, rest } : null;
+      }
     }
     return null;
   }
@@ -155,7 +175,8 @@
       if (/\b(subtotal|sub total)\b/.test(lower)) continue;
       if (isMetadataLine(line)) continue;
 
-      const extracted = extractPriceFromEnd(line);
+      let extracted = extractPriceFromEnd(line);
+      if (!extracted) extracted = extractPriceAnywhere(line);
       if (!extracted || extracted.price <= 0 || extracted.price >= 10000) continue;
 
       const { price, rest } = extracted;
@@ -179,20 +200,40 @@
   }
 
   /**
-   * Run Tesseract on image URL; return parsed items + warnings.
+   * Run Tesseract on image URL; return parsed items, warnings, and raw OCR text.
    */
   async function runOCR(imageUrl) {
     const { data: { text } } = await Tesseract.recognize(imageUrl, 'eng', {
       logger: () => {},
     });
-    return parseReceiptText(text);
+    const parsed = parseReceiptText(text);
+    return { ...parsed, rawText: text };
+  }
+
+  /**
+   * Suggest merchant name from first lines of OCR that look like a business name (not address/date).
+   */
+  function suggestMerchantFromRawText(rawText) {
+    const lines = rawText.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    for (let i = 0; i < Math.min(lines.length, 8); i++) {
+      const line = lines[i];
+      if (line.length < 4 || line.length > 60) continue;
+      if (/^\d+[.,]?\d*$/.test(line)) continue;
+      if (/\b(street|st\.|avenue|ave\.|blvd|road|rd\.|drive|dr\.|server|check\s*#|table|tab)\b/i.test(line)) continue;
+      if (/^\d+\s/.test(line) && line.length < 30) continue;
+      const letters = (line.match(/[a-zA-Z]/g) || []).length;
+      if (letters >= 4) return line.replace(/\s+/g, ' ').trim();
+    }
+    return null;
   }
 
   // --- Upload & thumbnails ---
   function addFiles(files) {
     const list = Array.from(files).filter(f => f.type.startsWith('image/'));
+    const remaining = Math.max(0, MAX_RECEIPTS - state.receiptFiles.length);
+    const toAdd = list.slice(0, remaining);
     const start = state.receiptFiles.length;
-    list.forEach((file, i) => {
+    toAdd.forEach((file, i) => {
       state.receiptFiles.push({
         id: 'r' + state.nextReceiptId++,
         file,
@@ -203,6 +244,10 @@
     });
     renderThumbnails();
     processDataUrls();
+    if (list.length > remaining && remaining > 0) {
+      state.warnings.push(`Maximum ${MAX_RECEIPTS} receipts. Only the first ${remaining} of the selected files were added.`);
+      renderWarnings();
+    }
   }
 
   function processDataUrls() {
@@ -227,6 +272,8 @@
   }
 
   function renderThumbnails() {
+    const countEl = document.getElementById('receipt-count-hint');
+    if (countEl) countEl.textContent = `${state.receiptFiles.length} / ${MAX_RECEIPTS} receipts`;
     receiptThumbnails.innerHTML = '';
     state.receiptFiles.forEach(r => {
       const wrap = document.createElement('div');
@@ -266,9 +313,13 @@
     for (const rec of state.receiptFiles) {
       if (!rec.dataUrl) continue;
       try {
-        const { items, warnings: w } = await runOCR(rec.dataUrl);
+        const { items, warnings: w, rawText } = await runOCR(rec.dataUrl);
         rec.parsed = true;
         state.warnings.push(...w);
+        if (rawText) {
+          const suggested = suggestMerchantFromRawText(rawText);
+          if (suggested && /^Receipt \d+$/.test(rec.merchantName)) rec.merchantName = suggested;
+        }
         items.forEach(({ name, price, quantity, uncertain }) => {
           state.items.push({
             id: 'i' + state.nextItemId++,
@@ -378,7 +429,7 @@
     addPersonBtn.textContent = state.people.length >= MAX_PEOPLE ? 'Maximum 20 people' : '+ Add person';
   }
 
-  // --- The bill (grouped by merchant) ---
+  // --- List of items (grouped by merchant) ---
   function renderBillSections() {
     billSections.innerHTML = '';
     const byReceipt = {};
@@ -405,13 +456,18 @@
       const editBtn = section.querySelector('.btn-edit-merchant');
       if (editBtn) editBtn.addEventListener('click', () => openMerchantModal(editBtn.dataset.receiptId));
 
-        items.forEach(item => {
+      const listHeader = document.createElement('div');
+      listHeader.className = 'bill-list-header';
+      listHeader.innerHTML = '<span class="bill-list-header-qty">Qty</span><span class="bill-list-header-name">Item</span><span class="bill-list-header-price">Price</span><span class="bill-list-header-assign">Assign to</span><span class="bill-list-header-remove"></span>';
+      section.appendChild(listHeader);
+
+      items.forEach(item => {
         const qty = item.quantity != null ? item.quantity : 1;
-        const qtyLabel = qty > 1 ? `<span class="bill-item-qty" title="Quantity">${qty}×</span> ` : '';
         const card = document.createElement('div');
         card.className = 'bill-item-card' + (item.uncertain ? ' uncertain' : '');
         card.innerHTML = `
-          <div class="bill-item-name">${qtyLabel}<span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</div>
+          <div class="bill-item-qty-cell" title="Quantity — tap to edit"><span class="cell-editable cell-editable-qty" data-item-id="${item.id}" data-field="quantity">${qty}</span></div>
+          <div class="bill-item-name"><span class="cell-editable" data-item-id="${item.id}" data-field="name">${escapeHtml(item.name)}</span>${item.uncertain ? ' <span title="Uncertain read">⚠️</span>' : ''}</div>
           <div class="bill-item-price"><span class="cell-editable" data-item-id="${item.id}" data-field="price">$${item.price.toFixed(2)}</span></div>
           <div class="bill-item-assign"></div>
           <button type="button" class="bill-item-remove" data-item-id="${item.id}" aria-label="Remove item">×</button>
@@ -440,7 +496,7 @@
         }
         card.querySelector('.bill-item-remove').addEventListener('click', () => removeItem(item.id));
         card.querySelectorAll('.cell-editable').forEach(el => {
-          el.addEventListener('click', () => openEditModal(el.dataset.itemId, el.dataset.field));
+          el.addEventListener('click', () => openEditModal(el.dataset.itemId, el.dataset.field || 'name'));
         });
         section.appendChild(card);
       });
@@ -487,8 +543,8 @@
     editName.value = item.name;
     editPrice.value = item.price.toFixed(2);
     show(editModal);
-    const focusEl = field === 'name' ? editName : field === 'price' ? editPrice : editQuantity;
-    setTimeout(() => focusEl.focus(), 50);
+    const focusEl = field === 'quantity' ? editQuantity : field === 'price' ? editPrice : editName;
+    setTimeout(() => (focusEl || editName).focus(), 50);
   }
 
   function closeEditModal() {
@@ -699,7 +755,7 @@
     y += lineHeight * 1.6;
     ctx.font = fontSmall;
     ctx.fillStyle = grayLight;
-    ctx.fillText('Scan. Parse. Split. Instant, private, done.', padding, y);
+    ctx.fillText('Scan → Parse → Split. Instant, private, done.', padding, y);
     y += sectionGap;
 
     ctx.strokeStyle = '#e5e5ea';
@@ -786,6 +842,69 @@
     }, 'image/png');
   }
 
+  /**
+   * Build GitHub issue body with uploaded files, parsed items, warnings, and browser info.
+   * Opens GitHub new-issue page with pre-filled title and body.
+   */
+  function reportBug() {
+    const title = 'Parsing issue: app unable to parse all information from receipt(s)';
+    const lines = [];
+    lines.push('### Description');
+    lines.push('User reported the app was unable to parse all information from their receipt(s).');
+    lines.push('');
+    lines.push('**Please attach the receipt image(s) in a comment** to help reproduce.');
+    lines.push('');
+    lines.push('---');
+    lines.push('');
+    lines.push('### Uploaded files');
+    lines.push(`- **Count:** ${state.receiptFiles.length} / ${MAX_RECEIPTS} max`);
+    state.receiptFiles.forEach((r, i) => {
+      lines.push(`- ${i + 1}. \`${(r.file && r.file.name) || 'unknown'}\` — merchant: ${r.merchantName || '—'}`);
+    });
+    lines.push('');
+    lines.push('### Parsed items (current page state)');
+    if (state.items.length === 0) {
+      lines.push('*No items parsed.*');
+    } else {
+      lines.push('| Qty | Name | Price | Merchant |');
+      lines.push('|-----|------|-------|----------|');
+      const maxRows = 40;
+      state.items.slice(0, maxRows).forEach(item => {
+        const qty = item.quantity != null ? item.quantity : 1;
+        const merchant = item.receiptId ? getMerchantName(item.receiptId) : '—';
+        const name = (item.name || '').replace(/\|/g, '\\|').replace(/\n/g, ' ');
+        lines.push(`| ${qty} | ${name} | $${item.price.toFixed(2)} | ${merchant} |`);
+      });
+      if (state.items.length > maxRows) lines.push(`| … | *(${state.items.length - maxRows} more)* | | |`);
+    }
+    lines.push('');
+    lines.push('### Parsing notes / warnings');
+    if (state.warnings.length === 0) {
+      lines.push('*None.*');
+    } else {
+      state.warnings.forEach(w => lines.push(`- ${w}`));
+    }
+    lines.push('');
+    lines.push('### People & split summary');
+    if (state.people.length === 0) {
+      lines.push('*No people added.*');
+    } else {
+      const owed = computeSplit();
+      state.people.forEach((p, idx) => {
+        const name = p.name || `Person ${idx + 1}`;
+        const amount = (owed[p.id] || 0).toFixed(2);
+        lines.push(`- **${name}:** $${amount}`);
+      });
+    }
+    lines.push('');
+    lines.push('### Environment');
+    lines.push(`- **Browser:** \`${navigator.userAgent}\``);
+    lines.push(`- **Reported at:** ${new Date().toISOString()}`);
+    const body = lines.join('\n');
+    const url = `https://github.com/${GITHUB_REPO}/issues/new?title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+    window.open(url, '_blank', 'noopener,noreferrer');
+  }
+
   // --- Event bindings ---
   dropzone.addEventListener('click', () => fileInput.click());
   dropzone.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') fileInput.click(); });
@@ -828,6 +947,12 @@
   downloadCsvBtn.addEventListener('click', downloadCsv);
   const downloadImageBtn = document.getElementById('download-image-btn');
   if (downloadImageBtn) downloadImageBtn.addEventListener('click', downloadSummaryImage);
+
+  const reportBugBtn = document.getElementById('report-bug-btn');
+  if (reportBugBtn) reportBugBtn.addEventListener('click', reportBug);
+
+  const maxReceiptsNum = document.getElementById('max-receipts-num');
+  if (maxReceiptsNum) maxReceiptsNum.textContent = String(MAX_RECEIPTS);
 
   const legalToggle = document.getElementById('legal-toggle');
   const legalNotice = document.getElementById('legal-notice');
